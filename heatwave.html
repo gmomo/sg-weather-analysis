@@ -50,6 +50,12 @@
   .badge-day { background: #fecaca; color: #991b1b; }
   .badge-night { background: #fed7aa; color: #9a3412; }
 
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .card-header h2 { margin-bottom: 0; }
+  .dl-btn { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; color: #666; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.15s; }
+  .dl-btn:hover { border-color: var(--accent); color: var(--accent); background: #eef2ff; }
+  .dl-btn svg { width: 14px; height: 14px; }
+
   #loading { text-align: center; padding: 60px; font-size: 1.1rem; color: #888; }
 </style>
 </head>
@@ -78,11 +84,11 @@
 <div class="tab-panel active" id="tab-events">
   <div class="grid">
     <div class="card full">
-      <h2>Daytime Temperature Timeline — Tmax vs CTX90pct Threshold</h2>
+      <div class="card-header"><h2>Daytime Temperature Timeline — Tmax vs CTX90pct Threshold</h2><button class="dl-btn" onclick="downloadChart('tmaxChart','tmax-timeline')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>PNG</button></div>
       <div class="chart-container" style="height:350px;"><canvas id="tmaxChart"></canvas></div>
     </div>
     <div class="card full">
-      <h2>Nighttime Temperature Timeline — Tmin vs CTN90pct Threshold</h2>
+      <div class="card-header"><h2>Nighttime Temperature Timeline — Tmin vs CTN90pct Threshold</h2><button class="dl-btn" onclick="downloadChart('tminChart','tmin-timeline')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>PNG</button></div>
       <div class="chart-container" style="height:350px;"><canvas id="tminChart"></canvas></div>
     </div>
     <div class="card full">
@@ -96,11 +102,11 @@
 <div class="tab-panel" id="tab-aspects">
   <div class="grid">
     <div class="card full">
-      <h2>Yearly Heatwave Aspects — HWN, HWF, HWD</h2>
+      <div class="card-header"><h2>Yearly Heatwave Aspects — HWN, HWF, HWD</h2><button class="dl-btn" onclick="downloadChart('aspectsChart','yearly-aspects')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>PNG</button></div>
       <div class="chart-container" style="height:380px;"><canvas id="aspectsChart"></canvas></div>
     </div>
     <div class="card full">
-      <h2>Station Comparison — Total Heatwave Days (HWF)</h2>
+      <div class="card-header"><h2>Station Comparison — Total Heatwave Days (HWF)</h2><button class="dl-btn" onclick="downloadChart('comparisonChart','station-comparison')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>PNG</button></div>
       <div class="chart-container" style="height:380px;"><canvas id="comparisonChart"></canvas></div>
     </div>
   </div>
@@ -110,7 +116,7 @@
 <div class="tab-panel" id="tab-threshold">
   <div class="grid">
     <div class="card full">
-      <h2>Calendar-Day Threshold Curves — CTX90pct &amp; CTN90pct</h2>
+      <div class="card-header"><h2>Calendar-Day Threshold Curves — CTX90pct &amp; CTN90pct</h2><button class="dl-btn" onclick="downloadChart('thresholdChart','threshold-profile')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>PNG</button></div>
       <div class="chart-container" style="height:400px;"><canvas id="thresholdChart"></canvas></div>
     </div>
   </div>
@@ -119,6 +125,18 @@
 <script>
 let DATA = null;
 const charts = {};
+
+// --- Download chart as PNG ---
+function downloadChart(canvasId, filename) {
+  const chart = charts[canvasId];
+  if (!chart) return;
+  const station = getSelectedStation();
+  const year = getSelectedYear();
+  const a = document.createElement('a');
+  a.href = chart.toBase64Image('image/png', 1);
+  a.download = filename + '_' + station + '_' + year + '.png';
+  a.click();
+}
 
 // --- Tab switching ---
 document.querySelectorAll('.tab-btn').forEach(btn => {
