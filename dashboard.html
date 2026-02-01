@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weather Data Dashboard (2015–2020)</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --card: #ffffff;
+    --border: #e0e0e0;
+    --text: #333;
+    --accent: #3b82f6;
+    --red: #ef4444;
+    --green: #22c55e;
+    --yellow: #eab308;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  header h1 { font-size: 1.25rem; font-weight: 600; }
+  .controls { display: flex; gap: 12px; align-items: center; }
+  .controls label { font-size: 0.875rem; font-weight: 500; }
+  .controls select { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; background: var(--card); border-bottom: 2px solid var(--border); padding: 0 24px; }
+  .tab-btn { padding: 12px 24px; border: none; background: none; font-size: 0.9rem; font-weight: 500; color: #888; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .grid { display: grid; grid-template-columns: 1fr; gap: 16px; padding: 16px 24px; max-width: 1400px; margin: 0 auto; }
+  @media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .card.full { grid-column: 1 / -1; }
+  .card h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 12px; }
+  .chart-container { position: relative; width: 100%; height: 300px; }
+
+  /* Heatmap table */
+  .heatmap-wrap { overflow-x: auto; }
+  .heatmap { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
+  .heatmap th, .heatmap td { padding: 6px 10px; text-align: center; border: 1px solid var(--border); white-space: nowrap; }
+  .heatmap th { background: #f9fafb; font-weight: 600; position: sticky; top: 0; }
+  .heatmap td.station-cell { text-align: left; font-weight: 600; background: #f9fafb; }
+  .legend { display: flex; gap: 16px; font-size: 0.75rem; margin-top: 8px; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 3px; }
+  #loading { text-align: center; padding: 60px; font-size: 1.1rem; color: #888; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Weather Data Dashboard — Singapore (2015–2020)</h1>
+  <div class="controls">
+    <label for="stationSelect">Station:</label>
+    <select id="stationSelect"><option value="ALL">All Stations</option></select>
+  </div>
+</header>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab-btn active" data-tab="weather">Weather Data</button>
+  <button class="tab-btn" data-tab="quality">Data Quality</button>
+</div>
+
+<div id="loading">Loading dashboard data…</div>
+
+<!-- Weather Data Tab -->
+<div class="tab-panel active" id="tab-weather">
+  <div class="grid">
+    <!-- Temperature Time Series -->
+    <div class="card">
+      <h2>Temperature — Monthly Average (°C)</h2>
+      <div class="chart-container"><canvas id="tempChart"></canvas></div>
+    </div>
+
+    <!-- Humidity Time Series -->
+    <div class="card">
+      <h2>Relative Humidity — Monthly Average (%)</h2>
+      <div class="chart-container"><canvas id="rhChart"></canvas></div>
+    </div>
+
+    <!-- Wind Speed -->
+    <div class="card">
+      <h2>Wind Speed — Monthly Average (m/s)</h2>
+      <div class="chart-container"><canvas id="windChart"></canvas></div>
+    </div>
+
+    <!-- Rainfall -->
+    <div class="card">
+      <h2>Rainfall — Monthly Total (mm)</h2>
+      <div class="chart-container"><canvas id="rainChart"></canvas></div>
+    </div>
+
+    <!-- Daily Min/Max Temperature -->
+    <div class="card full">
+      <h2>Daily Temperature Range — Min &amp; Max (°C)</h2>
+      <div class="chart-container" style="height:350px;"><canvas id="dailyTempChart"></canvas></div>
+    </div>
+
+    <!-- Hourly Profile -->
+    <div class="card full">
+      <h2>Hourly Profile — Avg Temperature &amp; Humidity</h2>
+      <div class="chart-container"><canvas id="hourlyChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- Data Quality Tab -->
+<div class="tab-panel" id="tab-quality">
+  <div class="grid">
+    <!-- Data Quality Heatmap -->
+    <div class="card full" id="heatmapCard">
+      <h2>Data Quality — % Missing per Station per Variable</h2>
+      <div class="heatmap-wrap"><table class="heatmap" id="heatmapTable"></table></div>
+      <div class="legend">
+        <span style="font-weight:600;">Legend:</span>
+        <div class="legend-item"><div class="legend-swatch" style="background:#22c55e;"></div> &lt;5%</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#86efac;"></div> 5–10%</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#fde047;"></div> 10–20%</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#fb923c;"></div> 20–35%</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#ef4444;"></div> &gt;35%</div>
+      </div>
+    </div>
+
+    <!-- Missing Data Timeline -->
+    <div class="card full">
+      <h2>Missing Data Timeline — Count per Month</h2>
+      <div class="chart-container" style="height:350px;"><canvas id="missingChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- Globals ---
+let DATA = null;
+const charts = {};
+const COLORS = {
+  temperature: '#ef4444',
+  rh: '#3b82f6',
+  wind_speed: '#22c55e',
+  rainfall: '#6366f1',
+  global_rad: '#f59e0b',
+};
+const MISSING_THRESHOLD = 30;
+
+// --- Tab switching ---
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    // Trigger resize so charts in newly visible tab render correctly
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+  });
+});
+
+// --- Helpers ---
+function heatColor(pct) {
+  if (pct < 5) return '#22c55e';
+  if (pct < 10) return '#86efac';
+  if (pct < 20) return '#fde047';
+  if (pct < 35) return '#fb923c';
+  return '#ef4444';
+}
+
+function textColorFor(bg) {
+  return (bg === '#fde047' || bg === '#86efac' || bg === '#22c55e') ? '#1a1a1a' : '#fff';
+}
+
+function filterMonthly(station) {
+  if (station === 'ALL') {
+    const byYm = {};
+    DATA.monthly.forEach(r => {
+      if (!byYm[r.ym]) byYm[r.ym] = { ym: r.ym, _counts: {} };
+      const agg = byYm[r.ym];
+      ['temperature', 'rh', 'wind_speed', 'rainfall', 'global_rad'].forEach(v => {
+        if (r[v] != null) {
+          if (!agg._counts[v]) { agg._counts[v] = { sum: 0, n: 0 }; }
+          agg._counts[v].sum += r[v];
+          agg._counts[v].n += 1;
+        }
+        const mk = v + '_missing_pct';
+        if (r[mk] != null) {
+          if (!agg._counts[mk]) { agg._counts[mk] = { sum: 0, n: 0 }; }
+          agg._counts[mk].sum += r[mk];
+          agg._counts[mk].n += 1;
+        }
+      });
+    });
+    return Object.values(byYm).map(a => {
+      const rec = { ym: a.ym };
+      ['temperature', 'rh', 'wind_speed', 'rainfall', 'global_rad'].forEach(v => {
+        const c = a._counts[v];
+        if (v === 'rainfall') {
+          rec[v] = c ? c.sum : null;
+        } else {
+          rec[v] = c ? +(c.sum / c.n).toFixed(2) : null;
+        }
+        const mk = v + '_missing_pct';
+        const mc = a._counts[mk];
+        rec[mk] = mc ? +(mc.sum / mc.n).toFixed(1) : 0;
+      });
+      return rec;
+    }).sort((a, b) => a.ym.localeCompare(b.ym));
+  }
+  return DATA.monthly.filter(r => r.station === station).sort((a, b) => a.ym.localeCompare(b.ym));
+}
+
+function filterHourly(station) {
+  if (station === 'ALL') {
+    const byH = {};
+    DATA.hourly.forEach(r => {
+      if (!byH[r.hour]) byH[r.hour] = { hour: r.hour, _t: [], _r: [] };
+      if (r.temperature != null) byH[r.hour]._t.push(r.temperature);
+      if (r.rh != null) byH[r.hour]._r.push(r.rh);
+    });
+    return Object.values(byH).map(h => ({
+      hour: h.hour,
+      temperature: h._t.length ? +(h._t.reduce((a, b) => a + b, 0) / h._t.length).toFixed(2) : null,
+      rh: h._r.length ? +(h._r.reduce((a, b) => a + b, 0) / h._r.length).toFixed(2) : null,
+    })).sort((a, b) => a.hour - b.hour);
+  }
+  return DATA.hourly.filter(r => r.station === station).sort((a, b) => a.hour - b.hour);
+}
+
+function filterMissingTimeline(station) {
+  if (station === 'ALL') {
+    const byYm = {};
+    DATA.missing_timeline.forEach(r => {
+      if (!byYm[r.ym]) byYm[r.ym] = { ym: r.ym, temperature: 0, rh: 0, wind_speed: 0, rainfall: 0, global_rad: 0 };
+      ['temperature', 'rh', 'wind_speed', 'rainfall', 'global_rad'].forEach(v => {
+        byYm[r.ym][v] += (r[v] || 0);
+      });
+    });
+    return Object.values(byYm).sort((a, b) => a.ym.localeCompare(b.ym));
+  }
+  return DATA.missing_timeline.filter(r => r.station === station).sort((a, b) => a.ym.localeCompare(b.ym));
+}
+
+function filterDailyTemp(station) {
+  if (station === 'ALL') {
+    const byDate = {};
+    DATA.daily_temp.forEach(r => {
+      if (!byDate[r.date]) byDate[r.date] = { date: r.date, _mins: [], _maxs: [] };
+      byDate[r.date]._mins.push(r.t_min);
+      byDate[r.date]._maxs.push(r.t_max);
+    });
+    return Object.values(byDate).map(d => ({
+      date: d.date,
+      t_min: +(d._mins.reduce((a, b) => a + b, 0) / d._mins.length).toFixed(1),
+      t_max: +(d._maxs.reduce((a, b) => a + b, 0) / d._maxs.length).toFixed(1),
+    })).sort((a, b) => a.date.localeCompare(b.date));
+  }
+  return DATA.daily_temp.filter(r => r.station === station).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// --- Chart builders ---
+function makeMonthlyLineChart(canvasId, variable, label, color) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  charts[canvasId] = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, position: 'top' } },
+      scales: {
+        x: { ticks: { maxTicksLimit: 24, maxRotation: 45 } },
+        y: { title: { display: true, text: label } }
+      },
+      interaction: { intersect: false, mode: 'index' },
+    }
+  });
+  charts[canvasId]._var = variable;
+  charts[canvasId]._color = color;
+  charts[canvasId]._label = label;
+}
+
+function updateMonthlyChart(canvasId, monthly) {
+  const chart = charts[canvasId];
+  const v = chart._var;
+  const color = chart._color;
+  const labels = monthly.map(r => r.ym);
+  const values = monthly.map(r => r[v]);
+  const missingKey = v + '_missing_pct';
+
+  const pointColors = monthly.map(r => (r[missingKey] > MISSING_THRESHOLD) ? '#ef4444' : color);
+  const pointRadii = monthly.map(r => (r[missingKey] > MISSING_THRESHOLD) ? 5 : 1.5);
+
+  const segmentBorderDash = (ctx) => {
+    const idx = ctx.p0DataIndex;
+    return (monthly[idx] && monthly[idx][missingKey] > MISSING_THRESHOLD) ? [5, 5] : undefined;
+  };
+
+  chart.data.labels = labels;
+  chart.data.datasets = [{
+    label: chart._label,
+    data: values,
+    borderColor: color,
+    backgroundColor: color + '33',
+    pointBackgroundColor: pointColors,
+    pointRadius: pointRadii,
+    pointHoverRadius: 6,
+    tension: 0.3,
+    fill: false,
+    segment: { borderDash: segmentBorderDash },
+    spanGaps: true,
+  }];
+  chart.update();
+}
+
+function makeRainfallChart(canvasId) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  charts[canvasId] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { maxTicksLimit: 24, maxRotation: 45 } },
+        y: { title: { display: true, text: 'Rainfall (mm)' } }
+      }
+    }
+  });
+}
+
+function updateRainfallChart(canvasId, monthly) {
+  const chart = charts[canvasId];
+  const labels = monthly.map(r => r.ym);
+  const values = monthly.map(r => r.rainfall);
+  const bgColors = monthly.map(r => r.rainfall_missing_pct > MISSING_THRESHOLD ? '#ef444488' : '#6366f1');
+
+  chart.data.labels = labels;
+  chart.data.datasets = [{
+    label: 'Rainfall (mm)',
+    data: values,
+    backgroundColor: bgColors,
+    borderRadius: 2,
+  }];
+  chart.update();
+}
+
+function makeDailyTempChart(canvasId) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  charts[canvasId] = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top' },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return context.dataset.label + ': ' + context.parsed.y + '°C';
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { maxTicksLimit: 30, maxRotation: 45 } },
+        y: { title: { display: true, text: '°C' } }
+      },
+      interaction: { intersect: false, mode: 'index' },
+    }
+  });
+}
+
+function updateDailyTempChart(canvasId, daily) {
+  const chart = charts[canvasId];
+  const labels = daily.map(r => r.date);
+  chart.data.labels = labels;
+  chart.data.datasets = [
+    {
+      label: 'Max Temperature',
+      data: daily.map(r => r.t_max),
+      borderColor: '#ef4444',
+      backgroundColor: '#ef444422',
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      fill: '+1',
+    },
+    {
+      label: 'Min Temperature',
+      data: daily.map(r => r.t_min),
+      borderColor: '#3b82f6',
+      backgroundColor: '#3b82f622',
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      fill: false,
+    },
+  ];
+  chart.update();
+}
+
+function makeHourlyChart(canvasId) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  charts[canvasId] = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        x: { title: { display: true, text: 'Hour of Day' } },
+        yTemp: { type: 'linear', position: 'left', title: { display: true, text: '°C' } },
+        yRH: { type: 'linear', position: 'right', title: { display: true, text: '%' }, grid: { drawOnChartArea: false } },
+      }
+    }
+  });
+}
+
+function updateHourlyChart(canvasId, hourly) {
+  const chart = charts[canvasId];
+  chart.data.labels = hourly.map(r => r.hour + ':00');
+  chart.data.datasets = [
+    {
+      label: 'Temperature (°C)', data: hourly.map(r => r.temperature),
+      borderColor: '#ef4444', backgroundColor: '#ef444433', yAxisID: 'yTemp', tension: 0.3,
+    },
+    {
+      label: 'RH (%)', data: hourly.map(r => r.rh),
+      borderColor: '#3b82f6', backgroundColor: '#3b82f633', yAxisID: 'yRH', tension: 0.3,
+    },
+  ];
+  chart.update();
+}
+
+function makeMissingChart(canvasId) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  charts[canvasId] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        x: { stacked: true, ticks: { maxTicksLimit: 24, maxRotation: 45 } },
+        y: { stacked: true, title: { display: true, text: 'Missing Count' } },
+      }
+    }
+  });
+}
+
+function updateMissingChart(canvasId, timeline) {
+  const chart = charts[canvasId];
+  const labels = timeline.map(r => r.ym);
+  const vars = ['temperature', 'rh', 'wind_speed', 'rainfall', 'global_rad'];
+  chart.data.labels = labels;
+  chart.data.datasets = vars.map(v => ({
+    label: DATA.var_labels[v],
+    data: timeline.map(r => r[v] || 0),
+    backgroundColor: COLORS[v] + 'cc',
+  }));
+  chart.update();
+}
+
+// --- Heatmap ---
+function buildHeatmap() {
+  const table = document.getElementById('heatmapTable');
+  const vars = ['temperature', 'rh', 'wind_speed', 'rainfall', 'global_rad'];
+  let html = '<thead><tr><th>Station</th>';
+  vars.forEach(v => { html += `<th>${DATA.var_labels[v]}</th>`; });
+  html += '</tr></thead><tbody>';
+  DATA.missing_summary.forEach(row => {
+    html += `<tr><td class="station-cell">${row.station}</td>`;
+    vars.forEach(v => {
+      const pct = row[v];
+      const bg = heatColor(pct);
+      const tc = textColorFor(bg);
+      html += `<td style="background:${bg};color:${tc};font-weight:600;">${pct}%</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+// --- Init ---
+function initDashboard() {
+  const sel = document.getElementById('stationSelect');
+  DATA.stations.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s; opt.textContent = s;
+    sel.appendChild(opt);
+  });
+
+  buildHeatmap();
+
+  makeMonthlyLineChart('tempChart', 'temperature', 'Temperature (°C)', '#ef4444');
+  makeMonthlyLineChart('rhChart', 'rh', 'RH (%)', '#3b82f6');
+  makeMonthlyLineChart('windChart', 'wind_speed', 'Wind Speed (m/s)', '#22c55e');
+  makeRainfallChart('rainChart');
+  makeDailyTempChart('dailyTempChart');
+  makeHourlyChart('hourlyChart');
+  makeMissingChart('missingChart');
+
+  updateCharts('ALL');
+  sel.addEventListener('change', () => updateCharts(sel.value));
+}
+
+function updateCharts(station) {
+  const monthly = filterMonthly(station);
+  updateMonthlyChart('tempChart', monthly);
+  updateMonthlyChart('rhChart', monthly);
+  updateMonthlyChart('windChart', monthly);
+  updateRainfallChart('rainChart', monthly);
+
+  const hourly = filterHourly(station);
+  updateHourlyChart('hourlyChart', hourly);
+
+  const daily = filterDailyTemp(station);
+  updateDailyTempChart('dailyTempChart', daily);
+
+  const timeline = filterMissingTimeline(station);
+  updateMissingChart('missingChart', timeline);
+}
+
+// --- Load data ---
+fetch('data/dashboard_data.json')
+  .then(r => { if (!r.ok) throw new Error('Failed to load data'); return r.json(); })
+  .then(d => {
+    DATA = d;
+    document.getElementById('loading').style.display = 'none';
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.visibility = 'visible');
+    initDashboard();
+  })
+  .catch(err => {
+    document.getElementById('loading').textContent = 'Error loading data: ' + err.message;
+  });
+</script>
+</body>
+</html>

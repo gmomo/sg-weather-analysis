@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Heatwave Detection Dashboard (2015–2020)</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --card: #ffffff;
+    --border: #e0e0e0;
+    --text: #333;
+    --accent: #3b82f6;
+    --red: #ef4444;
+    --green: #22c55e;
+    --yellow: #eab308;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  header h1 { font-size: 1.25rem; font-weight: 600; }
+  .controls { display: flex; gap: 12px; align-items: center; }
+  .controls label { font-size: 0.875rem; font-weight: 500; }
+  .controls select { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.875rem; }
+
+  .tabs { display: flex; gap: 0; background: var(--card); border-bottom: 2px solid var(--border); padding: 0 24px; }
+  .tab-btn { padding: 12px 24px; border: none; background: none; font-size: 0.9rem; font-weight: 500; color: #888; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .grid { display: grid; grid-template-columns: 1fr; gap: 16px; padding: 16px 24px; max-width: 1400px; margin: 0 auto; }
+  @media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .card.full { grid-column: 1 / -1; }
+  .card h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 12px; }
+  .chart-container { position: relative; width: 100%; height: 300px; }
+
+  /* Event table */
+  .table-wrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+  .event-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
+  .event-table th, .event-table td { padding: 6px 10px; text-align: left; border: 1px solid var(--border); white-space: nowrap; }
+  .event-table th { background: #f9fafb; font-weight: 600; position: sticky; top: 0; cursor: pointer; user-select: none; }
+  .event-table th:hover { background: #eef2ff; }
+  .event-table tr:nth-child(even) { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+  .badge-day { background: #fecaca; color: #991b1b; }
+  .badge-night { background: #fed7aa; color: #9a3412; }
+
+  #loading { text-align: center; padding: 60px; font-size: 1.1rem; color: #888; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Heatwave Detection Dashboard — Singapore (2015–2020)</h1>
+  <div class="controls">
+    <label for="stationSelect">Station:</label>
+    <select id="stationSelect"></select>
+  </div>
+  <div class="controls">
+    <label for="yearSelect">Year:</label>
+    <select id="yearSelect"></select>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="events">Heatwave Events</button>
+  <button class="tab-btn" data-tab="aspects">Heatwave Aspects</button>
+  <button class="tab-btn" data-tab="threshold">Threshold Profile</button>
+</div>
+
+<div id="loading">Loading heatwave data…</div>
+
+<!-- Tab 1: Heatwave Events -->
+<div class="tab-panel active" id="tab-events">
+  <div class="grid">
+    <div class="card full">
+      <h2>Daytime Temperature Timeline — Tmax vs CTX90pct Threshold</h2>
+      <div class="chart-container" style="height:350px;"><canvas id="tmaxChart"></canvas></div>
+    </div>
+    <div class="card full">
+      <h2>Nighttime Temperature Timeline — Tmin vs CTN90pct Threshold</h2>
+      <div class="chart-container" style="height:350px;"><canvas id="tminChart"></canvas></div>
+    </div>
+    <div class="card full">
+      <h2>Heatwave Event Table</h2>
+      <div class="table-wrap"><table class="event-table" id="eventTable"></table></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab 2: Heatwave Aspects -->
+<div class="tab-panel" id="tab-aspects">
+  <div class="grid">
+    <div class="card full">
+      <h2>Yearly Heatwave Aspects — HWN, HWF, HWD</h2>
+      <div class="chart-container" style="height:380px;"><canvas id="aspectsChart"></canvas></div>
+    </div>
+    <div class="card full">
+      <h2>Station Comparison — Total Heatwave Days (HWF)</h2>
+      <div class="chart-container" style="height:380px;"><canvas id="comparisonChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab 3: Threshold Profile -->
+<div class="tab-panel" id="tab-threshold">
+  <div class="grid">
+    <div class="card full">
+      <h2>Calendar-Day Threshold Curves — CTX90pct &amp; CTN90pct</h2>
+      <div class="chart-container" style="height:400px;"><canvas id="thresholdChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let DATA = null;
+const charts = {};
+
+// --- Tab switching ---
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+  });
+});
+
+// --- Helpers ---
+function getSelectedStation() { return document.getElementById('stationSelect').value; }
+function getSelectedYear() { return parseInt(document.getElementById('yearSelect').value); }
+
+function getDailyForStation(station) {
+  const rec = DATA.daily.find(d => d.station === station);
+  return rec ? rec.days : [];
+}
+
+function getEventsForStation(station) {
+  return DATA.events.filter(e => e.station === station);
+}
+
+// Build shaded heatwave annotation boxes for a year
+function hwAnnotations(events, year, color) {
+  return events
+    .filter(e => e.start_date.startsWith(String(year)))
+    .map((e, i) => ({
+      type: 'box',
+      xMin: e.start_date,
+      xMax: e.end_date,
+      backgroundColor: color,
+      borderWidth: 0,
+      drawTime: 'beforeDatasetsDraw',
+    }));
+}
+
+// --- Temperature timeline charts ---
+function makeTimelineChart(canvasId, label, tempKey, threshKey, lineColor, threshColor, bandColor, hwType) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  charts[canvasId] = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top' },
+        annotation: { annotations: {} },
+        tooltip: {
+          callbacks: {
+            label: c => c.dataset.label + ': ' + (c.parsed.y != null ? c.parsed.y.toFixed(1) + '°C' : '–')
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { maxTicksLimit: 24, maxRotation: 45 } },
+        y: { title: { display: true, text: '°C' } }
+      },
+      interaction: { intersect: false, mode: 'index' },
+    }
+  });
+  charts[canvasId]._meta = { tempKey, threshKey, lineColor, threshColor, bandColor, hwType };
+}
+
+function updateTimelineChart(canvasId) {
+  const chart = charts[canvasId];
+  const m = chart._meta;
+  const station = getSelectedStation();
+  const year = getSelectedYear();
+  const allDays = getDailyForStation(station);
+  const days = allDays.filter(d => d.date.startsWith(String(year)));
+  const events = getEventsForStation(station).filter(e => e.type === m.hwType);
+
+  chart.data.labels = days.map(d => d.date);
+  chart.data.datasets = [
+    {
+      label: m.tempKey === 'tmax' ? 'Daily Tmax' : 'Daily Tmin',
+      data: days.map(d => d[m.tempKey]),
+      borderColor: m.lineColor,
+      backgroundColor: m.lineColor + '22',
+      pointRadius: 0, pointHoverRadius: 4, tension: 0.3, fill: false,
+    },
+    {
+      label: m.threshKey === 'ctx_threshold' ? 'CTX90pct Threshold' : 'CTN90pct Threshold',
+      data: days.map(d => d[m.threshKey]),
+      borderColor: m.threshColor,
+      borderDash: [6, 4],
+      pointRadius: 0, pointHoverRadius: 3, tension: 0.3, fill: false, borderWidth: 2,
+    }
+  ];
+
+  // Heatwave band annotations
+  const annots = {};
+  hwAnnotations(events, year, m.bandColor).forEach((a, i) => { annots['hw' + i] = a; });
+  chart.options.plugins.annotation.annotations = annots;
+  chart.update();
+}
+
+// --- Event table ---
+function buildEventTable() {
+  const station = getSelectedStation();
+  const year = getSelectedYear();
+  let events = getEventsForStation(station);
+  if (year) events = events.filter(e => e.start_date.startsWith(String(year)));
+
+  const table = document.getElementById('eventTable');
+  let html = '<thead><tr>' +
+    '<th data-col="start_date">Start</th><th data-col="end_date">End</th>' +
+    '<th data-col="duration">Duration</th><th data-col="type">Type</th>' +
+    '<th data-col="peak_temp">Peak (°C)</th><th data-col="mean_temp">Mean (°C)</th>' +
+    '</tr></thead><tbody>';
+
+  if (events.length === 0) {
+    html += '<tr><td colspan="6" style="text-align:center;color:#888;">No heatwave events detected</td></tr>';
+  } else {
+    events.sort((a, b) => a.start_date.localeCompare(b.start_date));
+    events.forEach(e => {
+      const badge = e.type === 'daytime' ? 'badge-day' : 'badge-night';
+      const label = e.type === 'daytime' ? 'Day' : 'Night';
+      html += `<tr>
+        <td>${e.start_date}</td><td>${e.end_date}</td>
+        <td>${e.duration} days</td>
+        <td><span class="badge ${badge}">${label}</span></td>
+        <td>${e.peak_temp.toFixed(1)}</td><td>${e.mean_temp.toFixed(1)}</td>
+      </tr>`;
+    });
+  }
+  html += '</tbody>';
+  table.innerHTML = html;
+
+  // Sortable columns
+  table.querySelectorAll('th').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (!col) return;
+      const rows = Array.from(table.querySelectorAll('tbody tr'));
+      const colIdx = Array.from(th.parentElement.children).indexOf(th);
+      const asc = th.dataset.sort !== 'asc';
+      th.parentElement.querySelectorAll('th').forEach(h => delete h.dataset.sort);
+      th.dataset.sort = asc ? 'asc' : 'desc';
+      rows.sort((a, b) => {
+        let va = a.children[colIdx].textContent;
+        let vb = b.children[colIdx].textContent;
+        const na = parseFloat(va), nb = parseFloat(vb);
+        if (!isNaN(na) && !isNaN(nb)) return asc ? na - nb : nb - na;
+        return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+      });
+      const tbody = table.querySelector('tbody');
+      rows.forEach(r => tbody.appendChild(r));
+    });
+  });
+}
+
+// --- Aspects chart ---
+function makeAspectsChart() {
+  const ctx = document.getElementById('aspectsChart').getContext('2d');
+  charts['aspectsChart'] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        x: { title: { display: true, text: 'Year' } },
+        y: { title: { display: true, text: 'Count / Days' } }
+      }
+    }
+  });
+}
+
+function updateAspectsChart() {
+  const chart = charts['aspectsChart'];
+  const station = getSelectedStation();
+  const aspects = DATA.yearly_aspects.filter(a => a.station === station);
+
+  // Merge daytime + nighttime per year
+  const byYear = {};
+  aspects.forEach(a => {
+    if (!byYear[a.year]) byYear[a.year] = { HWN: 0, HWF: 0, HWD: 0 };
+    byYear[a.year].HWN += a.HWN;
+    byYear[a.year].HWF += a.HWF;
+    byYear[a.year].HWD = Math.max(byYear[a.year].HWD, a.HWD);
+  });
+
+  const years = Object.keys(byYear).sort();
+  chart.data.labels = years;
+  chart.data.datasets = [
+    { label: 'HWN (events)', data: years.map(y => byYear[y].HWN), backgroundColor: '#ef4444cc', borderRadius: 3 },
+    { label: 'HWF (total days)', data: years.map(y => byYear[y].HWF), backgroundColor: '#3b82f6cc', borderRadius: 3 },
+    { label: 'HWD (longest event)', data: years.map(y => byYear[y].HWD), backgroundColor: '#f59e0bcc', borderRadius: 3 },
+  ];
+  chart.update();
+}
+
+// --- Station comparison chart ---
+function makeComparisonChart() {
+  const ctx = document.getElementById('comparisonChart').getContext('2d');
+  charts['comparisonChart'] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: [], datasets: [] },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: 'Total Heatwave Days (HWF)' } },
+        y: {}
+      }
+    }
+  });
+}
+
+function updateComparisonChart() {
+  const chart = charts['comparisonChart'];
+  const year = getSelectedYear();
+  const aspects = DATA.yearly_aspects.filter(a => a.year === year);
+
+  const byStn = {};
+  aspects.forEach(a => {
+    if (!byStn[a.station]) byStn[a.station] = 0;
+    byStn[a.station] += a.HWF;
+  });
+
+  // Include stations with 0 events
+  DATA.stations.forEach(s => { if (!(s in byStn)) byStn[s] = 0; });
+
+  const entries = Object.entries(byStn).sort((a, b) => b[1] - a[1]);
+  chart.data.labels = entries.map(e => e[0]);
+  chart.data.datasets = [{
+    label: 'HWF',
+    data: entries.map(e => e[1]),
+    backgroundColor: entries.map(e => e[1] > 0 ? '#ef4444cc' : '#d1d5db'),
+    borderRadius: 3,
+  }];
+  chart.update();
+}
+
+// --- Threshold profile chart ---
+function makeThresholdChart() {
+  const ctx = document.getElementById('thresholdChart').getContext('2d');
+  charts['thresholdChart'] = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top' },
+        tooltip: {
+          callbacks: {
+            label: c => c.dataset.label + ': ' + (c.parsed.y != null ? c.parsed.y.toFixed(1) + '°C' : '–')
+          }
+        }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Day of Year' }, ticks: { maxTicksLimit: 24 } },
+        y: { title: { display: true, text: '°C' } }
+      },
+      interaction: { intersect: false, mode: 'index' },
+    }
+  });
+}
+
+function updateThresholdChart() {
+  const chart = charts['thresholdChart'];
+  const station = getSelectedStation();
+  const thresh = DATA.thresholds[station];
+  if (!thresh) { chart.data.labels = []; chart.data.datasets = []; chart.update(); return; }
+
+  const labels = [];
+  // Generate month labels for readability
+  const monthStarts = [1,32,60,91,121,152,182,213,244,274,305,335];
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  for (let d = 1; d <= 366; d++) {
+    const mi = monthStarts.findIndex((s, i) => d >= s && (i === 11 || d < monthStarts[i + 1]));
+    const dayInMonth = d - monthStarts[mi] + 1;
+    labels.push(monthNames[mi] + ' ' + dayInMonth);
+  }
+
+  chart.data.labels = labels;
+  chart.data.datasets = [
+    {
+      label: 'CTX90pct (Tmax threshold)',
+      data: thresh.ctx,
+      borderColor: '#ef4444',
+      backgroundColor: '#ef444422',
+      pointRadius: 0, pointHoverRadius: 3, tension: 0.3, fill: false, borderWidth: 2,
+    },
+    {
+      label: 'CTN90pct (Tmin threshold)',
+      data: thresh.ctn,
+      borderColor: '#f97316',
+      backgroundColor: '#f9731622',
+      pointRadius: 0, pointHoverRadius: 3, tension: 0.3, fill: false, borderWidth: 2,
+    }
+  ];
+  chart.update();
+}
+
+// --- Refresh all ---
+function refreshAll() {
+  updateTimelineChart('tmaxChart');
+  updateTimelineChart('tminChart');
+  buildEventTable();
+  updateAspectsChart();
+  updateComparisonChart();
+  updateThresholdChart();
+}
+
+// --- Init ---
+function initDashboard() {
+  const stationSel = document.getElementById('stationSelect');
+  DATA.stations.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s; opt.textContent = s;
+    stationSel.appendChild(opt);
+  });
+
+  // Determine available years from events + daily data
+  const years = new Set();
+  DATA.events.forEach(e => years.add(parseInt(e.start_date.slice(0, 4))));
+  DATA.daily.forEach(d => d.days.forEach(r => years.add(parseInt(r.date.slice(0, 4)))));
+  const sortedYears = Array.from(years).sort();
+  const yearSel = document.getElementById('yearSelect');
+  sortedYears.forEach(y => {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    yearSel.appendChild(opt);
+  });
+
+  // Create charts
+  makeTimelineChart('tmaxChart', 'Daily Tmax', 'tmax', 'ctx_threshold', '#ef4444', '#991b1b', 'rgba(239,68,68,0.15)', 'daytime');
+  makeTimelineChart('tminChart', 'Daily Tmin', 'tmin', 'ctn_threshold', '#f97316', '#9a3412', 'rgba(249,115,22,0.15)', 'nighttime');
+  makeAspectsChart();
+  makeComparisonChart();
+  makeThresholdChart();
+
+  stationSel.addEventListener('change', refreshAll);
+  yearSel.addEventListener('change', refreshAll);
+
+  refreshAll();
+}
+
+// --- Load ---
+fetch('data/heatwave_data.json')
+  .then(r => { if (!r.ok) throw new Error('Failed to load data'); return r.json(); })
+  .then(d => {
+    DATA = d;
+    document.getElementById('loading').style.display = 'none';
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.visibility = 'visible');
+    initDashboard();
+  })
+  .catch(err => {
+    document.getElementById('loading').textContent = 'Error loading data: ' + err.message;
+  });
+</script>
+</body>
+</html>

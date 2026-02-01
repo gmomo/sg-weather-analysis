@@ -1,0 +1,11 @@
+venv/
+.idea/
+*.iml
+__pycache__/
+
+# Large raw/processed CSV files
+data/*.csv
+data/exports/
+
+# Claude config
+.claude/
